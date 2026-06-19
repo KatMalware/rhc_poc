@@ -15,6 +15,11 @@
  *   decoys appear in ~40-60%. After N observations, frequency analysis
  *   trivially reveals the real header — breaking the core Level 4 claim.
  *
+ * FLAW 3: Replay Attack (Missing in Original PoC)
+ *   The original PHP PoC lacks replay protection. An attacker can
+ *   passively capture and resend a valid request. Decoys do not prevent this.
+ *   Our C implementation adds Nonce + Timestamp tracking to block it.
+ *
  * Contribution note:
  *   These are proposed as security findings for the RHC Protocol project.
  *   Mitigations are suggested at the end of each section.
@@ -275,17 +280,73 @@ static void demo_frequency_attack(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   FLAW 3: Replay Attack (Missing in Original PoC)
+   ═══════════════════════════════════════════════════════════════════
+
+   If a protocol lacks replay protection, an attacker can passively
+   capture a valid request and resend it. Even with Level 4 decoys,
+   the server will accept it because the tokens are valid.
+
+   We demonstrate how our Nonce + Timestamp cache blocks this.
+*/
+
+static void demo_replay_attack(void) {
+    printf("\n%s══════════════════════════════════════════════════════%s\n", C_RED, C_RESET);
+    printf("%s  FLAW 3: Replay Attack (Mitigated by C Implementation)%s\n", C_BOLD, C_RESET);
+    printf("%s══════════════════════════════════════════════════════%s\n\n", C_RED, C_RESET);
+
+    RhcSession session;
+    rhc_session_init(&session, RHC_LEVEL_4, RHC_MODE_B);
+
+    /* 1. Legitimate Client sends a request */
+    RhcRequest req_valid = rhc_build_request(&session);
+
+    printf("  %s[Legitimate Client]%s Sends Request (Nonce: %s%.12s...%s)\n",
+           C_CYAN, C_RESET, C_GREEN, req_valid.nonce, C_RESET);
+
+    RhcResult res1 = rhc_validate(&session, &req_valid);
+    if (res1.status == RHC_OK) {
+        printf("  %s✓ Server ACCEPTED legitimate request.%s\n", C_GREEN, C_RESET);
+        rhc_rotate(&session); /* Rotate for next request */
+    }
+
+    /* 2. Attacker intercepts and replays the EXACT SAME request */
+    printf("\n  %s[Attacker]%s Replays the exact same captured request...\n", C_RED, C_RESET);
+    
+    RhcResult res2 = rhc_validate(&session, &req_valid);
+    
+    printf("\n  %s[Attack Result]%s\n", C_CYAN, C_RESET);
+    if (res2.status == RHC_ERR_REPLAY) {
+        printf("  %s✓ Attack FAILED! Server REJECTED replay.%s\n", C_GREEN, C_RESET);
+        printf("  Reason: %s\n", res2.message);
+    } else if (res2.status == RHC_OK) {
+        printf("  %s✗ Attack SUCCESS! Server ACCEPTED replay.%s\n", C_RED, C_RESET);
+    } else {
+        printf("  %s✗ Attack FAILED! Server REJECTED (Reason: %s)%s\n", C_YELLOW, res2.message, C_RESET);
+    }
+
+    printf("\n  %s[Analysis]%s\n", C_CYAN, C_RESET);
+    printf("  Without nonce tracking, the token matches and the server accepts the replay.\n");
+    printf("  Decoys (Level 4) do NOT prevent replays because the whole packet is cloned.\n");
+
+    printf("\n  %s[Mitigation (Implemented)]%s\n", C_GREEN, C_RESET);
+    printf("  1. Nonce Cache: Server remembers the 16-byte nonce.\n");
+    printf("  2. Timestamp: Server rejects packets older than 30 seconds.\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN
    ═══════════════════════════════════════════════════════════════════ */
 int main(void) {
     printf("\n");
     printf("%s╔══════════════════════════════════════════════════════╗%s\n", C_MAGENTA, C_RESET);
     printf("%s║   RHC Protocol — Security Flaw Demonstration         ║%s\n", C_MAGENTA, C_RESET);
-    printf("%s║   Contribution: Two security findings + mitigations  ║%s\n", C_MAGENTA, C_RESET);
+    printf("%s║   Contribution: Three security findings + mitigations║%s\n", C_MAGENTA, C_RESET);
     printf("%s╚══════════════════════════════════════════════════════╝%s\n", C_MAGENTA, C_RESET);
 
     demo_timing_attack();
     demo_frequency_attack();
+    demo_replay_attack();
 
     printf("\n%s══════════════════════════════════════════════════════%s\n", C_MAGENTA, C_RESET);
     printf("%s  Summary of Findings%s\n", C_BOLD, C_RESET);
@@ -299,6 +360,10 @@ int main(void) {
     printf("           Real header has frequency=1.0, decoys < 1.0.\n");
     printf("           N observations → attacker identifies real header.\n");
     printf("           Fix: all headers in every request, or full-pool rotation.\n\n");
+
+    printf("  %s[FLAW-3]%s Replay Attack (Missing Replay Protection)\n", C_RED, C_RESET);
+    printf("           Without tracking, cloned requests bypass all checks.\n");
+    printf("           Fix: Nonce caching and Timestamp expiration window.\n\n");
 
     return 0;
 }
