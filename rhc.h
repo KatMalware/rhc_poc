@@ -20,22 +20,7 @@
 #include <stdint.h>
 #include <time.h>
 
-/* ─────────────────────────────────────────────
-   CONSTANTS
-   ───────────────────────────────────────────── */
-
-#define RHC_MAX_HEADERS     24
-#define RHC_MAX_HEADER_NAME 32
-#define RHC_MAX_TOKEN_LEN   129   /* 64 bytes hex = 128 chars + null terminator */
-#define RHC_MAX_NONCE_LEN   33    /* 16 bytes = 32 hex chars + null terminator */
-#define RHC_NONCE_CACHE     64    /* track last N nonces for replay detection */
-#define RHC_TIMESTAMP_WINDOW 30   /* seconds: reject requests older than this */
-
-/* Token lengths per level (in bytes → hex string is 2x) */
-#define TOKEN_LEN_8   8
-#define TOKEN_LEN_16  16
-#define TOKEN_LEN_32  32
-#define TOKEN_LEN_64  64
+#include "rhc_config.h"
 
 /* ─────────────────────────────────────────────
    ENUMS
