@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RHC Protocol - Live Advanced Server</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background-color: var(--bg-panel);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+            color: var(--accent);
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: var(--bg-dark);
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        
+        button.danger { background-color: var(--danger); color: white; }
+        button.warning { background-color: var(--warning); color: #000; }
+
+        .terminal {
+            background-color: #000;
+            color: #22c55e;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            border-radius: 8px;
+            flex-grow: 1;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .log-entry { margin-bottom: 10px; border-bottom: 1px dashed #333; padding-bottom: 10px; }
+        .log-ok { color: var(--success); }
+        .log-err { color: var(--danger); }
+        .log-delay { color: var(--warning); }
+        
+        .header-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .header-item {
+            background: #334155;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-family: monospace;
+        }
+        .header-item.real {
+            border-left: 4px solid var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .header-item.decoy {
+            border-left: 4px solid var(--text-muted);
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .banned-badge {
+            background: var(--danger);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>🛠️ Client / Attacker Controls</h2>
+        
+        <div class="status-bar">
+            <div>Expected Header: <strong id="expected_header" style="color:var(--accent)">Loading...</strong></div>
+            <div>Failed Attempts: <strong id="failed_attempts">0</strong></div>
+            <div id="banned_badge" class="banned-badge">IP BANNED</div>
+        </div>
+
+        <div class="controls">
+            <button onclick="sendRequest('legit_request')">Send Legit Request</button>
+            <button class="warning" onclick="sendRequest('spoof_ip')">Spoof IP (Hijack)</button>
+            <button class="danger" onclick="sendRequest('trigger_honeypot')">Trigger Honeypot</button>
+            <button style="background: #64748b; color: white; margin-left:auto" onclick="resetServer()">Reset Server</button>
+        </div>
+
+        <h3>Latest Request Payload</h3>
+        <div style="font-family: monospace; font-size: 0.9rem; margin-bottom: 10px;">
+            IP: <span id="req_ip">-</span> | Nonce: <span id="req_nonce">-</span>
+        </div>
+        <div class="header-list" id="headers_container">
+            <!-- Headers will be injected here -->
+            <div style="color: var(--text-muted); font-style: italic;">Send a request to view headers...</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>📡 Server Live Logs</h2>
+        <div class="terminal" id="terminal">
+            <div style="color: var(--accent);">[SYSTEM] RHC Advanced Server Initialized on Port 5000.</div>
+            <div style="color: var(--accent);">[SYSTEM] Waiting for incoming requests...</div>
+        </div>
+    </div>
+
+    <script>
+        async function updateStatus() {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            document.getElementById('expected_header').innerText = data.expected_header;
+            document.getElementById('failed_attempts').innerText = data.failed_attempts;
+            document.getElementById('banned_badge').style.display = data.is_banned ? 'block' : 'none';
+        }
+
+        async function resetServer() {
+            await fetch('/api/reset', { method: 'POST' });
+            document.getElementById('terminal').innerHTML = '<div style="color: var(--accent);">[SYSTEM] Server Reset. Unbanned all IPs.</div>';
+            document.getElementById('headers_container').innerHTML = '';
+            updateStatus();
+        }
+
+        async function sendRequest(endpoint) {
+            try {
+                const res = await fetch(`/api/${endpoint}`, { method: 'POST' });
+                const data = await res.json();
+                
+                // Update Payload UI
+                document.getElementById('req_ip').innerText = data.request.ip;
+                document.getElementById('req_nonce').innerText = data.request.nonce;
+                
+                const headersHtml = data.request.headers.map(h => `
+                    <div class="header-item ${h.is_decoy ? 'decoy' : 'real'}">
+                        <strong>${h.name}</strong>: ${h.value}
+                    </div>
+                `).join('');
+                document.getElementById('headers_container').innerHTML = headersHtml;
+
+                // Update Terminal
+                const terminal = document.getElementById('terminal');
+                let logClass = data.status === 0 ? 'log-ok' : 'log-err';
+                let timeLog = `[${data.exec_time_ms}ms]`;
+                let delayLog = data.delay_ms > 0 ? `<div class="log-delay">⚠️ Rate Limiting Delay Applied: ${data.delay_ms}ms</div>` : '';
+                
+                terminal.innerHTML += `
+                    <div class="log-entry ${logClass}">
+                        <strong>[INCOMING]</strong> IP: ${data.request.ip}<br>
+                        ${delayLog}
+                        <strong>[RESULT]</strong> ${timeLog} ${data.message}
+                    </div>
+                `;
+                terminal.scrollTop = terminal.scrollHeight;
+
+                updateStatus();
+            } catch (err) {
+                console.error("Request failed", err);
+            }
+        }
+
+        updateStatus();
+    </script>
+</body>
+</html>
