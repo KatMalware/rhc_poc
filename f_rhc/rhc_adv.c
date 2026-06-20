@@ -80,8 +80,8 @@ void rhc_adv_session_init(RhcAdvSession *session, RhcAdvLevel level, RhcAdvMode 
 
     /* Init Advanced State */
     read_random_bytes(session->hmac_secret, 32);
-    strncpy(session->bound_ip, client_ip, RHC_ADV_MAX_IP_LEN - 1);
-    strncpy(session->bound_ua, user_agent, RHC_ADV_MAX_UA_LEN - 1);
+    snprintf(session->bound_ip, sizeof(session->bound_ip), "%s", client_ip);
+    snprintf(session->bound_ua, sizeof(session->bound_ua), "%s", user_agent);
     
     session->token_byte_len = 32; /* HMAC-SHA256 is 32 bytes (64 hex chars) */
     
@@ -93,7 +93,7 @@ void rhc_adv_rotate(RhcAdvSession *session) {
     uint8_t r;
     read_random_bytes(&r, 1);
     int idx = r % 8;
-    strncpy(session->expected_header, VALID_HEADERS[idx], RHC_MAX_HEADER_NAME - 1);
+    snprintf(session->expected_header, sizeof(session->expected_header), "%s", VALID_HEADERS[idx]);
     
     /* We DO NOT generate expected_token here anymore.
        Because HMAC token depends on the request's Nonce and Timestamp!
@@ -105,8 +105,8 @@ RhcAdvRequest rhc_adv_build_request(RhcAdvSession *session) {
     RhcAdvRequest req;
     memset(&req, 0, sizeof(RhcAdvRequest));
     
-    strncpy(req.client_ip, session->bound_ip, RHC_ADV_MAX_IP_LEN - 1);
-    strncpy(req.user_agent, session->bound_ua, RHC_ADV_MAX_UA_LEN - 1);
+    snprintf(req.client_ip, sizeof(req.client_ip), "%s", session->bound_ip);
+    snprintf(req.user_agent, sizeof(req.user_agent), "%s", session->bound_ua);
     
     rhc_adv_gen_nonce(req.nonce);
     req.timestamp = time(NULL);
@@ -119,7 +119,7 @@ RhcAdvRequest rhc_adv_build_request(RhcAdvSession *session) {
     
     /* Level 4: Add ALL decoys */
     for (int i = 0; i < 12 && hcount < RHC_MAX_HEADERS; i++) {
-        strncpy(req.headers[hcount].name, DECOY_HEADERS[i], RHC_MAX_HEADER_NAME - 1);
+        snprintf(req.headers[hcount].name, sizeof(req.headers[hcount].name), "%s", DECOY_HEADERS[i]);
         
         char dummy_nonce[33];
         rhc_adv_gen_nonce(dummy_nonce);
@@ -131,7 +131,7 @@ RhcAdvRequest rhc_adv_build_request(RhcAdvSession *session) {
     /* Level 4: Add all unused valid headers as decoys */
     for (int i = 0; i < 8 && hcount < RHC_MAX_HEADERS; i++) {
         if (strcmp(VALID_HEADERS[i], session->expected_header) == 0) continue;
-        strncpy(req.headers[hcount].name, VALID_HEADERS[i], RHC_MAX_HEADER_NAME - 1);
+        snprintf(req.headers[hcount].name, sizeof(req.headers[hcount].name), "%s", VALID_HEADERS[i]);
         
         char dummy_nonce[33];
         rhc_adv_gen_nonce(dummy_nonce);
@@ -144,8 +144,8 @@ RhcAdvRequest rhc_adv_build_request(RhcAdvSession *session) {
     int real_pos = rand() % (hcount + 1);
     for (int i = hcount; i > real_pos; i--) req.headers[i] = req.headers[i-1];
     
-    strncpy(req.headers[real_pos].name, session->expected_header, RHC_MAX_HEADER_NAME - 1);
-    strncpy(req.headers[real_pos].value, valid_token, RHC_MAX_TOKEN_LEN - 1);
+    snprintf(req.headers[real_pos].name, sizeof(req.headers[real_pos].name), "%s", session->expected_header);
+    snprintf(req.headers[real_pos].value, sizeof(req.headers[real_pos].value), "%s", valid_token);
     req.headers[real_pos].is_decoy = 0;
     
     hcount++;
@@ -210,12 +210,12 @@ RhcAdvResult rhc_adv_validate(RhcAdvSession *session, const RhcAdvRequest *req) 
         const char *hval  = req->headers[i].value;
 
         if (strcmp(hname, session->expected_header) == 0) {
-            strncpy(result.found_header, hname, RHC_MAX_HEADER_NAME - 1);
-            strncpy(result.found_token, hval, RHC_MAX_TOKEN_LEN - 1);
+            snprintf(result.found_header, sizeof(result.found_header), "%s", hname);
+            snprintf(result.found_token, sizeof(result.found_token), "%s", hval);
             
             if (strlen(hval) == 64 && ct_memcmp(hval, expected_hmac, 64) == 0) {
                 /* Valid! */
-                strncpy(session->nonce_cache[session->nonce_cache_idx], req->nonce, RHC_MAX_NONCE_LEN - 1);
+                snprintf(session->nonce_cache[session->nonce_cache_idx], sizeof(session->nonce_cache[0]), "%s", req->nonce);
                 session->nonce_cache_idx = (session->nonce_cache_idx + 1) % RHC_NONCE_CACHE;
                 if (session->nonce_cache_count < RHC_NONCE_CACHE) session->nonce_cache_count++;
                 
@@ -236,7 +236,7 @@ RhcAdvResult rhc_adv_validate(RhcAdvSession *session, const RhcAdvRequest *req) 
             if (strcmp(hname, DECOY_HEADERS[d]) == 0 && strlen(hval) == 64 && ct_memcmp(hval, expected_hmac, 64) == 0) {
                 /* Attacker somehow forged a valid HMAC for a decoy header, or simply tried to brute force a decoy */
                 session->is_banned = 1;
-                strncpy(session->banned_ips[session->ban_count++], req->client_ip, RHC_ADV_MAX_IP_LEN - 1);
+                snprintf(session->banned_ips[session->ban_count++], sizeof(session->banned_ips[0]), "%s", req->client_ip);
                 
                 result.status = RHC_ADV_ERR_DECOY_SENT;
                 result.message = "CRITICAL: Honeypot Triggered! IP Banned permanently.";
